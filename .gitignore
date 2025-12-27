@@ -1,0 +1,10 @@
+# Build outputs
+build/
+local/
+
+# Compiled files
+*.o
+*.a
+*.so
+*.exe
+
