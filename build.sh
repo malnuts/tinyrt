@@ -18,13 +18,14 @@ auto_compile_flags=''
 git_hash=$(git describe --always --dirty)
 git_hash_full=$(git rev-parse HEAD)
 
+macros="-DGLFW_INCLUDE_NONE"
 # --- Compile/Link Line Definitions -------------------------------------------
-clangxx_common="-I../src/ -I/usr/include/freetype2/ -I../local/ -D_GNU_SOURCE -g -DBUILD_GIT_HASH=\"$git_hash\" -DBUILD_GIT_HASH_FULL=\"$git_hash_full\" -Wno-unknown-warning-option -fdiagnostics-absolute-paths -Wall -Wno-missing-braces -Wno-unused-function -Wno-writable-strings -Wno-unused-value -Wno-unused-variable -Wno-unused-local-typedef -Wno-deprecated-register -Wno-deprecated-declarations -Wno-unused-but-set-variable -Wno-single-bit-bitfield-constant-conversion -Wno-compare-distinct-pointer-types -Wno-initializer-overrides -Wno-incompatible-pointer-types-discards-qualifiers -Wno-for-loop-analysis -Xclang -flto-visibility-public-std -D_USE_MATH_DEFINES -Dstrdup=_strdup -Dgnu_printf=printf"
+clangxx_common="${macros} -I../src/ -I../external/glfw/include -I../local/ -D_GNU_SOURCE -g -DBUILD_GIT_HASH=\"$git_hash\" -DBUILD_GIT_HASH_FULL=\"$git_hash_full\" -Wno-unknown-warning-option -fdiagnostics-absolute-paths -Wall -Wno-missing-braces -Wno-unused-function -Wno-writable-strings -Wno-unused-value -Wno-unused-variable -Wno-unused-local-typedef -Wno-deprecated-register -Wno-deprecated-declarations -Wno-unused-but-set-variable -Wno-single-bit-bitfield-constant-conversion -Wno-compare-distinct-pointer-types -Wno-initializer-overrides -Wno-incompatible-pointer-types-discards-qualifiers -Wno-for-loop-analysis -Xclang -flto-visibility-public-std -D_USE_MATH_DEFINES -Dstrdup=_strdup -Dgnu_printf=printf"
 clangxx_debug="$compiler -g -O0 -DBUILD_DEBUG=1 ${clangxx_common} ${auto_compile_flags}"
 clangxx_release="$compiler -g -O2 -DBUILD_DEBUG=0 ${clangxx_common} ${auto_compile_flags}"
 clangxx_link="-lpthread -lm -lrt -ldl"
 clangxx_out="-o"
-gxx_common="-I../src/ -I../local/ -g -D_GNU_SOURCE -DBUILD_GIT_HASH=\"$git_hash\" -DBUILD_GIT_HASH_FULL=\"$git_hash_full\" -Wno-unknown-warning-option -Wall -Wno-missing-braces -Wno-unused-function -Wno-attributes -Wno-unused-value -Wno-unused-variable -Wno-unused-local-typedef -Wno-deprecated-declarations -Wno-unused-but-set-variable -Wno-compare-distinct-pointer-types -D_USE_MATH_DEFINES -Dstrdup=_strdup -Dgnu_printf=printf"
+gxx_common="${macros} -I../src/ -I../local/ -I../external/glfw/include -g -D_GNU_SOURCE -DBUILD_GIT_HASH=\"$git_hash\" -DBUILD_GIT_HASH_FULL=\"$git_hash_full\" -Wno-unknown-warning-option -Wall -Wno-missing-braces -Wno-unused-function -Wno-attributes -Wno-unused-value -Wno-unused-variable -Wno-unused-local-typedef -Wno-deprecated-declarations -Wno-unused-but-set-variable -Wno-compare-distinct-pointer-types -D_USE_MATH_DEFINES -Dstrdup=_strdup -Dgnu_printf=printf"
 gxx_debug="$compiler -g -O0 -DBUILD_DEBUG=1 ${gxx_common} ${auto_compile_flags}"
 gxx_release="$compiler -g -O2 -DBUILD_DEBUG=0 ${gxx_common} ${auto_compile_flags}"
 gxx_link="-lpthread -lm -lrt -ldl"
@@ -32,9 +33,8 @@ gxx_out="-o"
 
 # --- Per-Build Settings ------------------------------------------------------
 link_dll="-fPIC"
-link_os_gfx="-lX11 -lXext"
+link_os_gfx="-lX11 -lXext -lXrandr -lXi -lXcursor -lXinerama"
 link_render="-lvulkan"
-link_font_provider="-lfreetype"
 
 # --- Choose Compile/Link Lines -----------------------------------------------
 if [ -v gxx ];     then compile_debug="$gxx_debug"; fi
@@ -67,7 +67,7 @@ then
     -DGLFW_BUILD_EXAMPLES=OFF \
     -DBUILD_SHARED_LIBS=OFF \
     -DGLFW_BUILD_WAYLAND=OFF \
-    -DGLFW_BUILD_X11=ON
+    -DGLFW_BUILD_X11=ON \
   
   make -j$(nproc)
   
@@ -78,7 +78,7 @@ fi
 
 # --- Build Everything (@build_targets) ---------------------------------------
 cd build
-if [ -v tinyrt ];                then didbuild=1 && $compile ../src/tinyrt/tinyrt_main.cpp                                   $compile_link $link_os_gfx $link_render $out tinyrt; fi
+if [ -v tinyrt ];                then didbuild=1 && $compile ../src/tinyrt/tinyrt_main.cpp ../local/libglfw3.a                      $compile_link $link_os_gfx $link_render $out tinyrt; fi
 cd ..
 
 # --- Warn On No Builds -------------------------------------------------------
@@ -87,3 +87,22 @@ then
   echo "[WARNING] no valid build target specified; must use build target names as arguments to this script, like \`./build.sh raddbg\` or \`./build.sh rdi_from_pdb\`."
   exit 1
 fi
+
+
+# --- Prep Directories --------------------------------------------------------
+
+mkdir -p shaders  # For source shaders
+mkdir -p build/shaders  # For compiled .spv files
+
+# --- Compile Shaders ---------------------------------------------------------
+echo "[compiling shaders]"
+
+shopt -s nullglob
+for shader_file in shaders/*; do
+  [ -f "$shader_file" ] || continue
+  
+  filename=$(basename "$shader_file")
+  echo "  Compiling $filename..."
+  glslc "$shader_file" -o "build/shaders/${filename}.spv" || exit 1
+done
+shopt -u nullglob
